@@ -17,6 +17,7 @@
 package com.netflix.spinnaker.front50.model.notification;
 
 import com.netflix.spectator.api.Registry;
+import com.netflix.spinnaker.front50.config.StorageServiceConfigurationProperties;
 import com.netflix.spinnaker.front50.model.ObjectKeyLoader;
 import com.netflix.spinnaker.front50.model.ObjectType;
 import com.netflix.spinnaker.front50.model.StorageService;
@@ -42,6 +43,23 @@ public class DefaultNotificationDAO extends StorageServiceSupport<Notification>
         objectKeyLoader,
         refreshIntervalMs,
         shouldWarmCache,
+        registry,
+        circuitBreakerRegistry);
+  }
+
+  public DefaultNotificationDAO(
+      StorageService service,
+      Scheduler scheduler,
+      ObjectKeyLoader objectKeyLoader,
+      StorageServiceConfigurationProperties.PerObjectType configurationProperties,
+      Registry registry,
+      CircuitBreakerRegistry circuitBreakerRegistry) {
+    super(
+        ObjectType.NOTIFICATION,
+        service,
+        scheduler,
+        objectKeyLoader,
+        configurationProperties,
         registry,
         circuitBreakerRegistry);
   }

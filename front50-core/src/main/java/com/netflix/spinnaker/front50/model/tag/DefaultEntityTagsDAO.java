@@ -17,6 +17,7 @@
 package com.netflix.spinnaker.front50.model.tag;
 
 import com.netflix.spectator.api.Registry;
+import com.netflix.spinnaker.front50.config.StorageServiceConfigurationProperties;
 import com.netflix.spinnaker.front50.model.ObjectKeyLoader;
 import com.netflix.spinnaker.front50.model.ObjectType;
 import com.netflix.spinnaker.front50.model.StorageService;
@@ -28,6 +29,7 @@ import rx.Scheduler;
 
 public class DefaultEntityTagsDAO extends StorageServiceSupport<EntityTags>
     implements EntityTagsDAO {
+
   public DefaultEntityTagsDAO(
       StorageService service,
       Scheduler scheduler,
@@ -43,6 +45,23 @@ public class DefaultEntityTagsDAO extends StorageServiceSupport<EntityTags>
         objectKeyLoader,
         refreshIntervalMs,
         shouldWarmCache,
+        registry,
+        circuitBreakerRegistry);
+  }
+
+  public DefaultEntityTagsDAO(
+      StorageService service,
+      Scheduler scheduler,
+      ObjectKeyLoader objectKeyLoader,
+      StorageServiceConfigurationProperties.PerObjectType configurationProperties,
+      Registry registry,
+      CircuitBreakerRegistry circuitBreakerRegistry) {
+    super(
+        ObjectType.ENTITY_TAGS,
+        service,
+        scheduler,
+        objectKeyLoader,
+        configurationProperties,
         registry,
         circuitBreakerRegistry);
   }

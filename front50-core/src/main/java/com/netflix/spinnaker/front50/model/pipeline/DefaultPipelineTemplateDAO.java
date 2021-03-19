@@ -16,6 +16,7 @@
 package com.netflix.spinnaker.front50.model.pipeline;
 
 import com.netflix.spectator.api.Registry;
+import com.netflix.spinnaker.front50.config.StorageServiceConfigurationProperties;
 import com.netflix.spinnaker.front50.model.ObjectKeyLoader;
 import com.netflix.spinnaker.front50.model.ObjectType;
 import com.netflix.spinnaker.front50.model.StorageService;
@@ -42,6 +43,23 @@ public class DefaultPipelineTemplateDAO extends StorageServiceSupport<PipelineTe
         objectKeyLoader,
         refreshIntervalMs,
         shouldWarmCache,
+        registry,
+        circuitBreakerRegistry);
+  }
+
+  public DefaultPipelineTemplateDAO(
+      StorageService service,
+      Scheduler scheduler,
+      ObjectKeyLoader objectKeyLoader,
+      StorageServiceConfigurationProperties.PerObjectType configurationProperties,
+      Registry registry,
+      CircuitBreakerRegistry circuitBreakerRegistry) {
+    super(
+        ObjectType.PIPELINE_TEMPLATE,
+        service,
+        scheduler,
+        objectKeyLoader,
+        configurationProperties,
         registry,
         circuitBreakerRegistry);
   }

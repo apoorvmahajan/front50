@@ -45,6 +45,9 @@ import com.netflix.spinnaker.security.AuthenticatedRequest
 import java.time.Clock
 import kotlin.system.measureTimeMillis
 import org.jooq.DSLContext
+import org.jooq.Record
+import org.jooq.Result
+import org.jooq.SelectFieldOrAsterisk
 import org.jooq.exception.SQLDialectNotSupportedException
 import org.jooq.impl.DSL
 import org.jooq.impl.DSL.field
@@ -94,7 +97,7 @@ class SqlStorageService(
           .from(definitionsByType[objectType]!!.tableName)
           .where(
             field("id", String::class.java).eq(objectKey).and(
-              DSL.field("is_deleted", Boolean::class.java).eq(false)
+              field("is_deleted", Boolean::class.java).eq(false)
             )
           )
           .fetchOne()
@@ -117,7 +120,7 @@ class SqlStorageService(
                 .from(definitionsByType[objectType]!!.tableName)
                 .where(
                   field("id", String::class.java).`in`(keys).and(
-                    DSL.field("is_deleted", Boolean::class.java).eq(false)
+                    field("is_deleted", Boolean::class.java).eq(false)
                   )
                 )
                 .fetch()
@@ -142,20 +145,76 @@ class SqlStorageService(
     return objects
   }
 
+  override fun <T : Timestamped> loadObjectsNewerThan(
+    objectType: ObjectType,
+    lastModifiedThreshold: Long
+  ):
+    Map<String, List<T>> {
+
+    log.debug("Fetching {} objects with last_modified_at value greater than {}",
+      objectType.name,
+      lastModifiedThreshold)
+
+    val deletedKey = "deleted"
+    val notDeletedKey = "not_deleted"
+
+    val resultMap = mapOf<String, MutableList<T>>(
+      deletedKey to mutableListOf(),
+      notDeletedKey to mutableListOf()
+    )
+
+    val tableSupportsSoftDeletes = definitionsByType[objectType]!!.supportsHistory
+
+    val fieldsToFetch = mutableListOf<SelectFieldOrAsterisk>(field("body", String::class.java))
+    if (tableSupportsSoftDeletes) {
+      fieldsToFetch.add(field("is_deleted", Boolean::class.java))
+    }
+
+    val timeToLoadObjects = measureTimeMillis {
+      val result: Result<Record> = jooq.withRetry(sqlRetryProperties.reads) { ctx ->
+        ctx
+          .select(fieldsToFetch)
+          .from(definitionsByType[objectType]!!.tableName)
+          .where(field("last_modified_at", Long::class.java).greaterThan(lastModifiedThreshold))
+          .fetch()
+      }
+      for (record in result) {
+        val insertInto = if (tableSupportsSoftDeletes && record.get("is_deleted", Boolean::class.java)) {
+          deletedKey
+        } else {
+          notDeletedKey
+        }
+        resultMap[insertInto]!!.add(
+          record.get("body", String::class.java)
+            .let { objectMapper.readValue(it, objectType.clazz as Class<T>)
+            })
+      }
+    }
+
+    log.debug("Took {}ms to fetch {} {} objects with last_modified_at value greater than {}",
+      timeToLoadObjects,
+      resultMap[deletedKey]!!.size + resultMap[notDeletedKey]!!.size,
+      objectType,
+      lastModifiedThreshold
+    )
+
+    return resultMap
+  }
+
   override fun deleteObject(objectType: ObjectType, objectKey: String) {
     withPool(poolName) {
       jooq.transactional(sqlRetryProperties.transactions) { ctx ->
         if (definitionsByType[objectType]!!.supportsHistory) {
           ctx
             .update(table(definitionsByType[objectType]!!.tableName))
-            .set(DSL.field("is_deleted", Boolean::class.java), true)
-            .set(DSL.field("last_modified_at", Long::class.java), clock.millis())
-            .where(DSL.field("id", String::class.java).eq(objectKey))
+            .set(field("is_deleted", Boolean::class.java), true)
+            .set(field("last_modified_at", Long::class.java), clock.millis())
+            .where(field("id", String::class.java).eq(objectKey))
             .execute()
         } else {
           ctx
             .delete(table(definitionsByType[objectType]!!.tableName))
-            .where(DSL.field("id", String::class.java).eq(objectKey))
+            .where(field("id", String::class.java).eq(objectKey))
             .execute()
         }
       }
@@ -178,12 +237,12 @@ class SqlStorageService(
 
                   ctx.insertInto(
                     table(definitionsByType[objectType]!!.tableName),
-                    *insertPairs.keys.map { DSL.field(it) }.toTypedArray()
+                    *insertPairs.keys.map { field(it) }.toTypedArray()
                   )
                     .values(insertPairs.values)
-                    .onConflict(DSL.field("id", String::class.java))
+                    .onConflict(field("id", String::class.java))
                     .doUpdate()
-                    .set(updatePairs.mapKeys { DSL.field(it.key) })
+                    .set(updatePairs.mapKeys { field(it.key) })
                 }
               ).execute()
             } catch (e: SQLDialectNotSupportedException) {
@@ -203,7 +262,7 @@ class SqlStorageService(
                     ctx
                       .insertInto(
                         table(definitionsByType[objectType]!!.historyTableName),
-                        *historyPairs.keys.map { DSL.field(it) }.toTypedArray()
+                        *historyPairs.keys.map { field(it) }.toTypedArray()
                       )
                       .values(historyPairs.values)
                       .onDuplicateKeyIgnore()
@@ -237,12 +296,12 @@ class SqlStorageService(
             ctx
               .insertInto(
                 table(definitionsByType[objectType]!!.tableName),
-                *insertPairs.keys.map { DSL.field(it) }.toTypedArray()
+                *insertPairs.keys.map { field(it) }.toTypedArray()
               )
               .values(insertPairs.values)
-              .onConflict(DSL.field("id", String::class.java))
+              .onConflict(field("id", String::class.java))
               .doUpdate()
-              .set(updatePairs.mapKeys { DSL.field(it.key) })
+              .set(updatePairs.mapKeys { field(it.key) })
               .execute()
           } catch (e: SQLDialectNotSupportedException) {
             storeSingleObject(objectType, objectKey, item)
@@ -255,7 +314,7 @@ class SqlStorageService(
               ctx
                 .insertInto(
                   table(definitionsByType[objectType]!!.historyTableName),
-                  *historyPairs.keys.map { DSL.field(it) }.toTypedArray()
+                  *historyPairs.keys.map { field(it) }.toTypedArray()
                 )
                 .values(historyPairs.values)
                 .onDuplicateKeyIgnore()
@@ -282,7 +341,7 @@ class SqlStorageService(
             field("last_modified_at", Long::class.java)
           )
           .from(table(definitionsByType[objectType]!!.tableName))
-          .where(DSL.field("is_deleted", Boolean::class.java).eq(false))
+          .where(field("is_deleted", Boolean::class.java).eq(false))
           .fetch()
           .intoResultSet()
       }
@@ -291,7 +350,7 @@ class SqlStorageService(
     val objectKeys = mutableMapOf<String, Long>()
 
     while (resultSet.next()) {
-      objectKeys.put(resultSet.getString(1), resultSet.getLong(2))
+      objectKeys[resultSet.getString(1)] = resultSet.getLong(2)
     }
 
     log.debug(
@@ -320,8 +379,8 @@ class SqlStorageService(
           ctx
             .select(field("body", String::class.java))
             .from(definitionsByType[objectType]!!.historyTableName)
-            .where(DSL.field("id", String::class.java).eq(objectKey))
-            .orderBy(DSL.field("recorded_at").desc())
+            .where(field("id", String::class.java).eq(objectKey))
+            .orderBy(field("recorded_at").desc())
             .limit(maxResults)
             .fetch()
             .getValues(field("body", String::class.java))
@@ -329,7 +388,7 @@ class SqlStorageService(
           ctx
             .select(field("body", String::class.java))
             .from(definitionsByType[objectType]!!.tableName)
-            .where(DSL.field("id", String::class.java).eq(objectKey))
+            .where(field("id", String::class.java).eq(objectKey))
             .fetch()
             .getValues(field("body", String::class.java))
         }
@@ -368,9 +427,9 @@ class SqlStorageService(
       jooq.transactional(sqlRetryProperties.transactions) { ctx ->
         val updatedCount = ctx
           .update(table(definitionsByType[objectType]!!.tableName))
-          .set(DSL.field("is_deleted", Boolean::class.java), false)
-          .set(DSL.field("last_modified_at", Long::class.java), clock.millis())
-          .where(DSL.field("id", String::class.java).eq(operation.objectId.toLowerCase()))
+          .set(field("is_deleted", Boolean::class.java), false)
+          .set(field("last_modified_at", Long::class.java), clock.millis())
+          .where(field("id", String::class.java).eq(operation.objectId.toLowerCase()))
           .execute()
 
         if (updatedCount == 0) {
@@ -398,7 +457,7 @@ class SqlStorageService(
       jooq.withRetry(sqlRetryProperties.transactions) {
         jooq
           .update(table(definitionsByType[objectType]!!.tableName)).apply {
-            updatePairs.forEach { k, v ->
+            updatePairs.forEach { (k, v) ->
               set(field(k), v)
             }
           }
@@ -411,7 +470,7 @@ class SqlStorageService(
         jooq
           .insertInto(
             table(definitionsByType[objectType]!!.tableName),
-            *insertPairs.keys.map { DSL.field(it) }.toTypedArray()
+            *insertPairs.keys.map { field(it) }.toTypedArray()
           )
           .values(insertPairs.values)
           .execute()
@@ -436,7 +495,7 @@ class SqlStorageService(
         jooq
           .insertInto(
             table(definitionsByType[objectType]!!.historyTableName),
-            *historyPairs.keys.map { DSL.field(it) }.toTypedArray()
+            *historyPairs.keys.map { field(it) }.toTypedArray()
           )
           .values(historyPairs.values)
           .execute()
