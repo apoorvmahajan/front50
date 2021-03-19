@@ -20,6 +20,7 @@ import com.netflix.spectator.api.NoopRegistry
 import com.netflix.spinnaker.fiat.shared.FiatPermissionEvaluator
 import com.netflix.spinnaker.front50.ServiceAccountsService
 import com.netflix.spinnaker.front50.config.StorageServiceConfigurationProperties
+import com.netflix.spinnaker.front50.config.controllers.PipelineControllerConfig
 import com.netflix.spinnaker.front50.model.DefaultObjectKeyLoader
 import com.netflix.spinnaker.front50.model.S3StorageService
 import com.netflix.spinnaker.front50.model.SqlStorageService
@@ -29,6 +30,7 @@ import com.netflix.spinnaker.kork.sql.config.SqlRetryProperties
 import com.netflix.spinnaker.kork.sql.test.SqlTestUtil
 import com.netflix.spinnaker.kork.web.exceptions.ExceptionMessageDecorator
 import com.netflix.spinnaker.kork.web.exceptions.GenericExceptionHandlers
+import groovy.json.JsonSlurper
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import org.assertj.core.util.Lists
 import org.springframework.beans.factory.ObjectProvider
@@ -66,6 +68,7 @@ abstract class PipelineControllerTck extends Specification {
   @Subject
   PipelineDAO pipelineDAO
   ServiceAccountsService serviceAccountsService
+  PipelineControllerConfig config = new PipelineControllerConfig()
   StorageServiceConfigurationProperties.PerObjectType pipelineDAOConfigProperties =
     new StorageServiceConfigurationProperties().getPipeline()
   FiatPermissionEvaluator fiatPermissionEvaluator
@@ -82,6 +85,7 @@ abstract class PipelineControllerTck extends Specification {
         Optional.of(serviceAccountsService),
         Lists.emptyList(),
         Optional.empty(),
+        config,
         fiatPermissionEvaluator))
       .setControllerAdvice(
         new GenericExceptionHandlers(
@@ -183,7 +187,6 @@ abstract class PipelineControllerTck extends Specification {
   }
 
   @Unroll
-  @Ignore("Fix test with the bulk save change")
   void 'should only (re)generate cron trigger ids for new pipelines'() {
     given:
     def pipeline = [
@@ -219,7 +222,6 @@ abstract class PipelineControllerTck extends Specification {
     true             || { Map p -> p.triggers*.id == ["original-id"] }
   }
 
-  @Ignore("Fix test with the bulk save change")
   void 'should ensure that all cron triggers have an identifier'() {
     given:
     def pipeline = [
@@ -307,6 +309,129 @@ abstract class PipelineControllerTck extends Specification {
     response.errorMessage == "A pipeline with name pipeline1 already exists in application test"
   }
 
+  void 'should not refresh cache when checking for duplicates when saving'() {
+    given:
+    def pipeline = [name: "My Pipeline", application: "test"]
+    config.save.refreshCacheOnDuplicatesCheck = false
+
+    when:
+    def response = mockMvc.perform(post('/pipelines')
+      .contentType(MediaType.APPLICATION_JSON)
+      .content(new ObjectMapper().writeValueAsString(pipeline)))
+      .andReturn()
+      .response
+
+    then:
+    response.status == OK
+    1 * pipelineDAO.getPipelinesByApplication("test", false)
+
+    when:
+    pipeline.name = "My Second Pipeline"
+    config.save.refreshCacheOnDuplicatesCheck = true
+    response = mockMvc.perform(post('/pipelines')
+      .contentType(MediaType.APPLICATION_JSON)
+      .content(new ObjectMapper().writeValueAsString(pipeline)))
+      .andReturn()
+      .response
+
+    then:
+    response.status == OK
+    1 * pipelineDAO.getPipelinesByApplication("test", true)
+  }
+
+  def "should perform batch update"() {
+    given:
+    def pipelines = [
+      [name: "My Pipeline1", application: "test1", id: "id1", triggers: []],
+      [name: "My Pipeline2", application: "test1", id: "id2", triggers: []],
+      [name: "My Pipeline3", application: "test2", id: "id3", triggers: []],
+      [name: "My Pipeline4", application: "test2", id: "id4", triggers: []],
+    ]
+
+    when:
+    def response = mockMvc.perform(post('/pipelines/batchUpdate')
+      .contentType(MediaType.APPLICATION_JSON)
+      .content(new ObjectMapper().writeValueAsString(pipelines)))
+      .andReturn()
+      .response
+
+    then:
+    response.status == OK
+    1 * fiatPermissionEvaluator.hasPermission(_, "test1", "APPLICATION", "WRITE") >> true
+    1 * fiatPermissionEvaluator.hasPermission(_, "test2", "APPLICATION", "WRITE") >> true
+    1 * pipelineDAO.bulkImport(pipelines) >> null
+    new JsonSlurper().parseText(response.getContentAsString()) == [
+      successful_pipelines_count: 4,
+      successful_pipelines      : ["My Pipeline1", "My Pipeline2", "My Pipeline3", "My Pipeline4"],
+      failed_pipelines_count    : 0,
+      failed_pipelines          : []
+    ]
+  }
+
+  def "should perform batch updates with failures"() {
+    given:
+    def pipelines = [
+      [name: "Successful Pipeline 1", application: "test_app", id: "id1", triggers: []],
+      [id: "id2", triggers: []],
+      [name: "Failed Pipeline 3", application: "test_app_without_permission", id: "id3", triggers: []],
+      [name: "Failed Pipeline 4", application: "test_app", id: "id4", triggers: []],
+      [name: "Failed Pipeline 5", application: "test_app", id: "id1", triggers: []]
+    ]
+
+    // Success case
+    when:
+    def response = mockMvc.perform(post('/pipelines/batchUpdate')
+      .contentType(MediaType.APPLICATION_JSON)
+      .content(new ObjectMapper().writeValueAsString(pipelines)))
+      .andReturn()
+      .response
+
+    then:
+    1 * pipelineDAO.all(false) >> [
+      [name: "Failed Pipeline 4", application: "test_app", id: "existing_pipeline_id"] as Pipeline
+    ]
+    1 * fiatPermissionEvaluator.hasPermission(_, "test_app", "APPLICATION", "WRITE") >> true
+    1 * fiatPermissionEvaluator.hasPermission(_, "test_app_without_permission", "APPLICATION", "WRITE") >> false
+    1 * pipelineDAO.bulkImport(pipelines[0..0]) >> null
+    response.status == OK
+    new JsonSlurper().parseText(response.getContentAsString()) == [
+      successful_pipelines_count: 1,
+      successful_pipelines: ["Successful Pipeline 1"],
+      failed_pipelines_count    : 4,
+      failed_pipelines          : [
+        [
+          id         : "id2",
+          triggers: [],
+          errorMsg   : "Encountered the following error when validating pipeline null in the application null: " +
+            "Invalid pipeline definition provided. A valid pipeline name and application name must be provided."
+        ],
+        [
+          id         : "id3",
+          name       : "Failed Pipeline 3",
+          application: "test_app_without_permission",
+          triggers: [],
+          errorMsg   : "User anonymous does not have WRITE permission " +
+            "to save the pipeline Failed Pipeline 3 in the application test_app_without_permission."
+        ],
+        [
+          id         : "id4",
+          name       : "Failed Pipeline 4",
+          application: "test_app",
+          triggers: [],
+          errorMsg   : "A pipeline with name Failed Pipeline 4 already exists in the application test_app"
+        ],
+        [
+          id         : "id1",
+          name       : "Failed Pipeline 5",
+          application: "test_app",
+          triggers: [],
+          errorMsg   : "Duplicate pipeline id id1 found when processing pipeline Failed Pipeline 5 " +
+            "in the application test_app"
+        ]
+      ]
+    ]
+  }
+
   def "multi-threaded cache refresh with no synchronization"() {
     given:
     pipelineDAO.create(null, new Pipeline([
@@ -340,6 +465,7 @@ abstract class PipelineControllerTck extends Specification {
               Optional.of(serviceAccountsService),
               Lists.emptyList(),
               Optional.empty(),
+              config,
               fiatPermissionEvaluator))
             .setControllerAdvice(
               new GenericExceptionHandlers(
@@ -396,6 +522,7 @@ abstract class PipelineControllerTck extends Specification {
               Optional.of(serviceAccountsService),
               Lists.emptyList(),
               Optional.empty(),
+              config,
               fiatPermissionEvaluator))
             .setControllerAdvice(
               new GenericExceptionHandlers(
@@ -450,6 +577,7 @@ abstract class PipelineControllerTck extends Specification {
               Optional.of(serviceAccountsService),
               Lists.emptyList(),
               Optional.empty(),
+              config,
               fiatPermissionEvaluator))
             .setControllerAdvice(
               new GenericExceptionHandlers(
@@ -518,6 +646,7 @@ abstract class PipelineControllerTck extends Specification {
               Optional.of(serviceAccountsService),
               Lists.emptyList(),
               Optional.empty(),
+              config,
               fiatPermissionEvaluator))
             .setControllerAdvice(
               new GenericExceptionHandlers(
@@ -587,6 +716,9 @@ class S3PipelineControllerTck extends PipelineControllerTck {
       new NoopRegistry(),
       CircuitBreakerRegistry.ofDefaults())
 
+    // refreshing to initialize the cache with empty set
+    pipelineDAO.all(true)
+
     return pipelineDAO
   }
 }
@@ -632,7 +764,6 @@ class SqlPipelineControllerTck extends PipelineControllerTck {
     return pipelineDAO
   }
 
-  @Ignore("Re-enable when bulk saves are implemented")
   def "should optimally refresh the cache after updates and deletes"() {
     given:
     pipelineDAOConfigProperties.setOptimizeCacheRefreshes(true)

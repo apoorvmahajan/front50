@@ -23,6 +23,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import com.netflix.spinnaker.fiat.shared.FiatPermissionEvaluator;
 import com.netflix.spinnaker.front50.ServiceAccountsService;
+import com.netflix.spinnaker.front50.config.controllers.PipelineControllerConfig;
 import com.netflix.spinnaker.front50.exception.BadRequestException;
 import com.netflix.spinnaker.front50.exceptions.DuplicateEntityException;
 import com.netflix.spinnaker.front50.exceptions.InvalidEntityException;
@@ -36,11 +37,11 @@ import com.netflix.spinnaker.front50.validator.GenericValidationErrors;
 import com.netflix.spinnaker.front50.validator.PipelineValidator;
 import com.netflix.spinnaker.kork.web.exceptions.NotFoundException;
 import com.netflix.spinnaker.kork.web.exceptions.ValidationException;
+import com.netflix.spinnaker.security.AuthenticatedRequest;
 import java.util.*;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.security.access.prepost.PostAuthorize;
 import org.springframework.security.access.prepost.PostFilter;
@@ -65,10 +66,8 @@ public class PipelineController {
   private final Optional<ServiceAccountsService> serviceAccountsService;
   private final List<PipelineValidator> pipelineValidators;
   private final Optional<PipelineTemplateDAO> pipelineTemplateDAO;
+  private final PipelineControllerConfig pipelineControllerConfig;
   private final FiatPermissionEvaluator fiatPermissionEvaluator;
-
-  @Value("${sql.enabled}")
-  private String sqlEnabled;
 
   public PipelineController(
       PipelineDAO pipelineDAO,
@@ -76,12 +75,14 @@ public class PipelineController {
       Optional<ServiceAccountsService> serviceAccountsService,
       List<PipelineValidator> pipelineValidators,
       Optional<PipelineTemplateDAO> pipelineTemplateDAO,
+      PipelineControllerConfig pipelineControllerConfig,
       FiatPermissionEvaluator fiatPermissionEvaluator) {
     this.pipelineDAO = pipelineDAO;
     this.objectMapper = objectMapper;
     this.serviceAccountsService = serviceAccountsService;
     this.pipelineValidators = pipelineValidators;
     this.pipelineTemplateDAO = pipelineTemplateDAO;
+    this.pipelineControllerConfig = pipelineControllerConfig;
     this.fiatPermissionEvaluator = fiatPermissionEvaluator;
   }
 
@@ -146,100 +147,92 @@ public class PipelineController {
   }
 
   @PreAuthorize(
-      "@fiatPermissionEvaluator.storeWholePermission() and hasPermission(#pipeline.application, 'APPLICATION', 'WRITE') and @authorizationSupport.hasRunAsUserPermission(#pipeline)")
+      "@fiatPermissionEvaluator.storeWholePermission() "
+          + "and hasPermission(#pipeline.application, 'APPLICATION', 'WRITE') "
+          + "and @authorizationSupport.hasRunAsUserPermission(#pipeline)")
   @RequestMapping(value = "", method = RequestMethod.POST)
   public Pipeline save(
       @RequestBody Pipeline pipeline,
       @RequestParam(value = "staleCheck", required = false, defaultValue = "false")
           Boolean staleCheck) {
 
+    long saveStartTime = System.currentTimeMillis();
+    log.info(
+        "Received request to save pipeline {} in application {}",
+        pipeline.getName(),
+        pipeline.getApplication());
+
+    log.debug("Running validation before saving pipeline {}", pipeline.getName());
+    long validationStartTime = System.currentTimeMillis();
     validatePipeline(pipeline, staleCheck);
-
+    checkForDuplicatePipeline(
+        pipeline.getApplication(), pipeline.getName().trim(), pipeline.getId());
     pipeline.setName(pipeline.getName().trim());
-    pipeline = ensureCronTriggersHaveIdentifier(pipeline);
+    log.debug(
+        "Successfully validated pipeline {} in {}ms",
+        pipeline.getName(),
+        System.currentTimeMillis() - validationStartTime);
 
-    if (Strings.isNullOrEmpty(pipeline.getId())
-        || (boolean) pipeline.getOrDefault("regenerateCronTriggerIds", false)) {
-      // ensure that cron triggers are assigned a unique identifier for new pipelines
-      pipeline.getTriggers().stream()
-          .filter(it -> "cron".equals(it.getType()))
-          .forEach(it -> it.put("id", UUID.randomUUID().toString()));
-    }
-
-    return pipelineDAO.create(pipeline.getId(), pipeline);
+    Pipeline savedPipeline = pipelineDAO.create(pipeline.getId(), pipeline);
+    log.info(
+        "Successfully saved pipeline {} in application {} in {}ms",
+        savedPipeline.getName(),
+        savedPipeline.getApplication(),
+        System.currentTimeMillis() - saveStartTime);
+    return savedPipeline;
   }
 
   @PreAuthorize(
-      "@fiatPermissionEvaluator.storeWholePermission() and @authorizationSupport.hasRunAsUserPermission(#pipelineList)")
-  @RequestMapping(value = "/bulksave", method = RequestMethod.POST)
-  public Map<String, Object> bulksave(
-      @RequestBody List<Pipeline> pipelineList,
+      "@fiatPermissionEvaluator.storeWholePermission() "
+          + "and @authorizationSupport.hasRunAsUserPermission(#pipelines)")
+  @RequestMapping(value = "batchUpdate", method = RequestMethod.POST)
+  public Map<String, Object> batchUpdate(
+      @RequestBody List<Pipeline> pipelines,
       @RequestParam(value = "staleCheck", required = false, defaultValue = "false")
           Boolean staleCheck) {
 
+    long batchUpdateStartTime = System.currentTimeMillis();
+
     Map<String, Object> returnData = new HashMap<>();
-    if ("true".equals(sqlEnabled)) {
-      final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-      List<Pipeline> savePipelineList = new ArrayList<>();
-      List<Pipeline> errorPipelineList = new ArrayList<>();
-      Set<String> uniqueIdSet = new HashSet<>();
-      boolean fiatPermission = false;
-      for (Pipeline pipeline : pipelineList) {
-        try {
-          fiatPermission =
-              fiatPermissionEvaluator.hasPermission(
-                  auth, pipeline.getApplication(), "APPLICATION", "WRITE");
-          if (!fiatPermission) {
-            errorPipelineList.add(pipeline);
-            pipeline.put(
-                "errorMsg", "Application do not have WRITE permission to save the pipeline.");
-            continue;
-          }
-          validatePipeline(pipeline, staleCheck);
-          pipeline.setName(pipeline.getName().trim());
-          pipeline = ensureCronTriggersHaveIdentifier(pipeline);
 
-          if (Strings.isNullOrEmpty(pipeline.getId())
-              || (boolean) pipeline.getOrDefault("regenerateCronTriggerIds", false)) {
-            // ensure that cron triggers are assigned a unique identifier for new pipelines
-            pipeline.getTriggers().stream()
-                .filter(it -> "cron".equals(it.getType()))
-                .forEach(it -> it.put("id", UUID.randomUUID().toString()));
-          }
-          String id = pipeline.getId();
-          if (id == null) {
-            id = UUID.randomUUID().toString();
-            pipeline.setId(id);
-          } else {
-            if (!(uniqueIdSet.add(id))) {
-              errorPipelineList.add(pipeline);
-              pipeline.put("errorMsg", "Duplicate pipeline id found.");
-              continue;
-            }
-          }
-          if (fiatPermission) {
-            savePipelineList.add(pipeline);
-          }
-        } catch (Exception e) {
-          errorPipelineList.add(pipeline);
-          pipeline.put("errorMsg", e.getMessage());
-        }
-      }
-      returnData.put("Successful", savePipelineList.size());
-      returnData.put("Failed", errorPipelineList.size());
-      returnData.put("Failed_list", errorPipelineList);
-      pipelineDAO.bulkImport(savePipelineList);
-    } else {
-      throw new InvalidRequestException(
-          "Bulk save enabled only for sql storage.Enable sql.enabled to true.");
+    log.info(
+        "Received request to batch update the following pipelines: {}",
+        pipelines.stream().map(Pipeline::getName).collect(Collectors.toList()));
+
+    log.debug("Following pipeline definitions will be processed: {}", pipelines);
+
+    List<Pipeline> pipelinesToSave = new ArrayList<>();
+    List<Pipeline> invalidPipelines = new ArrayList<>();
+
+    validatePipelines(pipelines, staleCheck, pipelinesToSave, invalidPipelines);
+
+    long bulkImportStartTime = System.currentTimeMillis();
+    log.debug("Bulk importing the following pipelines: {}", pipelinesToSave);
+    pipelineDAO.bulkImport(pipelinesToSave);
+    log.debug(
+        "Bulk imported {} pipelines successfully in {}ms",
+        pipelinesToSave.size(),
+        System.currentTimeMillis() - bulkImportStartTime);
+
+    List<String> savedPipelines =
+        pipelinesToSave.stream().map(Pipeline::getName).collect(Collectors.toList());
+    returnData.put("successful_pipelines_count", savedPipelines.size());
+    returnData.put("successful_pipelines", savedPipelines);
+    returnData.put("failed_pipelines_count", invalidPipelines.size());
+    returnData.put("failed_pipelines", invalidPipelines);
+
+    if (!invalidPipelines.isEmpty()) {
+      log.warn(
+          "Following pipelines were skipped during the bulk import since they had errors: {}",
+          invalidPipelines.stream().map(Pipeline::getName).collect(Collectors.toList()));
     }
-    return returnData;
-  }
+    log.info(
+        "Batch updated the following {} pipelines in {}ms: {}",
+        savedPipelines.size(),
+        System.currentTimeMillis() - batchUpdateStartTime,
+        savedPipelines);
 
-  @PreAuthorize("@fiatPermissionEvaluator.isAdmin()")
-  @RequestMapping(value = "batchUpdate", method = RequestMethod.POST)
-  public void batchUpdate(@RequestBody List<Pipeline> pipelines) {
-    pipelineDAO.bulkImport(pipelines);
+    return returnData;
   }
 
   @PreAuthorize("hasPermission(#application, 'APPLICATION', 'WRITE')")
@@ -279,10 +272,10 @@ public class PipelineController {
     }
 
     validatePipeline(pipeline, staleCheck);
+    checkForDuplicatePipeline(
+        pipeline.getApplication(), pipeline.getName().trim(), pipeline.getId());
 
-    pipeline.setName(pipeline.getName().trim());
     pipeline.put("updateTs", System.currentTimeMillis());
-    pipeline = ensureCronTriggersHaveIdentifier(pipeline);
 
     pipelineDAO.update(id, pipeline);
 
@@ -295,11 +288,13 @@ public class PipelineController {
    * @param pipeline The Pipeline to validate
    */
   private void validatePipeline(final Pipeline pipeline, Boolean staleCheck) {
-    // Pipelines must have an application and a name
+    // Check if valid pipeline name and app name have been provided
     if (Strings.isNullOrEmpty(pipeline.getApplication())
         || Strings.isNullOrEmpty(pipeline.getName())) {
-      throw new InvalidEntityException("A pipeline requires name and application fields");
+      throw new InvalidEntityException(
+          "Invalid pipeline definition provided. A valid pipeline name and application name must be provided.");
     }
+    pipeline.setName(pipeline.getName().trim());
 
     // Check if pipeline type is templated
     if (TYPE_TEMPLATED.equals(pipeline.getType())) {
@@ -332,17 +327,35 @@ public class PipelineController {
       }
     }
 
-    checkForDuplicatePipeline(
-        pipeline.getApplication(), pipeline.getName().trim(), pipeline.getId());
+    ensureCronTriggersHaveIdentifier(pipeline);
+
+    // Ensure cron trigger ids are regenerated if needed
+    if (Strings.isNullOrEmpty(pipeline.getId())
+        || (boolean) pipeline.getOrDefault("regenerateCronTriggerIds", false)) {
+      // ensure that cron triggers are assigned a unique identifier for new pipelines
+      pipeline.setTriggers(
+          pipeline.getTriggers().stream()
+              .map(
+                  it -> {
+                    if ("cron".equalsIgnoreCase(it.getType())) {
+                      it.put("id", UUID.randomUUID().toString());
+                    }
+                    return it;
+                  })
+              .collect(Collectors.toList()));
+    }
 
     final GenericValidationErrors errors = new GenericValidationErrors(pipeline);
-    pipelineValidators.forEach(it -> it.validate(pipeline, errors));
 
+    // Run stale pipeline definition check
     if (staleCheck
         && !Strings.isNullOrEmpty(pipeline.getId())
         && pipeline.getLastModified() != null) {
       checkForStalePipeline(pipeline, errors);
     }
+
+    // Run other pre-configured validators
+    pipelineValidators.forEach(it -> it.validate(pipeline, errors));
 
     if (errors.hasErrors()) {
       List<String> message =
@@ -375,8 +388,14 @@ public class PipelineController {
   }
 
   private void checkForDuplicatePipeline(String application, String name, String id) {
+    log.debug(
+        "Cache refresh enabled when checking for duplicates: {}",
+        pipelineControllerConfig.getSave().isRefreshCacheOnDuplicatesCheck());
     boolean any =
-        pipelineDAO.getPipelinesByApplication(application).stream()
+        pipelineDAO
+            .getPipelinesByApplication(
+                application, pipelineControllerConfig.getSave().isRefreshCacheOnDuplicatesCheck())
+            .stream()
             .anyMatch(it -> it.getName().equalsIgnoreCase(name) && !it.getId().equals(id));
     if (any) {
       throw new DuplicateEntityException(
@@ -384,18 +403,128 @@ public class PipelineController {
     }
   }
 
-  private void checkForDuplicatePipeline(String application, String name) {
-    checkForDuplicatePipeline(application, name, null);
+  private static void ensureCronTriggersHaveIdentifier(Pipeline pipeline) {
+    // ensure that all cron triggers have an assigned identifier
+    pipeline.setTriggers(
+        pipeline.getTriggers().stream()
+            .map(
+                it -> {
+                  if ("cron".equalsIgnoreCase(it.getType())) {
+                    String triggerId = (String) it.getOrDefault("id", "");
+                    if (triggerId.isEmpty()) {
+                      it.put("id", UUID.randomUUID().toString());
+                    }
+                  }
+                  return it;
+                })
+            .collect(Collectors.toList()));
   }
 
-  private static Pipeline ensureCronTriggersHaveIdentifier(Pipeline pipeline) {
-    // ensure that all cron triggers have an assigned identifier
-    pipeline.getTriggers().stream()
-        .filter(it -> "cron".equalsIgnoreCase(it.getType()))
+  /** * Fetches all the pipelines and groups then into a map indexed by applications */
+  private Map<String, List<Pipeline>> getAllPipelinesByApplication() {
+    Map<String, List<Pipeline>> appToPipelines = new HashMap<>();
+    pipelineDAO
+        .all(false)
         .forEach(
-            it ->
-                it.put(
-                    "id", Optional.ofNullable(it.get("id")).orElse(UUID.randomUUID().toString())));
-    return pipeline;
+            pipeline ->
+                appToPipelines
+                    .computeIfAbsent(pipeline.getApplication(), k -> new ArrayList<>())
+                    .add(pipeline));
+    return appToPipelines;
+  }
+
+  /**
+   * Validates the provided list of pipelines and populates the provided valid and invalid pipelines
+   * accordingly. Following validations are performed:
+   *
+   * @param pipelines List of {@link Pipeline} to be validated
+   * @param staleCheck Controls whether stale check should be performed while validating pipelines
+   * @param validPipelines Result list of {@link Pipeline} that passed validations
+   * @param invalidPipelines Result list of {@link Pipeline} that failed validations
+   */
+  private void validatePipelines(
+      List<Pipeline> pipelines,
+      Boolean staleCheck,
+      List<Pipeline> validPipelines,
+      List<Pipeline> invalidPipelines) {
+
+    Map<String, List<Pipeline>> pipelinesByApp = getAllPipelinesByApplication();
+    Map<String, Boolean> appPermissionForUser = new HashMap<>();
+    Set<String> uniqueIdSet = new HashSet<>();
+
+    final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    String user = AuthenticatedRequest.getSpinnakerUser().orElse("anonymous");
+
+    long validationStartTime = System.currentTimeMillis();
+    log.debug("Running validations before saving");
+    for (Pipeline pipeline : pipelines) {
+      try {
+        validatePipeline(pipeline, staleCheck);
+
+        String app = pipeline.getApplication();
+        String pipelineName = pipeline.getName();
+
+        // Check if user has permission to write the pipeline
+        if (!appPermissionForUser.computeIfAbsent(
+            app,
+            key ->
+                fiatPermissionEvaluator.hasPermission(
+                    auth, pipeline.getApplication(), "APPLICATION", "WRITE"))) {
+          String errorMessage =
+              String.format(
+                  "User %s does not have WRITE permission to save the pipeline %s in the application %s.",
+                  user, pipeline.getName(), pipeline.getApplication());
+          log.error(errorMessage);
+          pipeline.put("errorMsg", errorMessage);
+          invalidPipelines.add(pipeline);
+          continue;
+        }
+
+        // Check if duplicate pipeline exists in the same app
+        List<Pipeline> appPipelines = pipelinesByApp.getOrDefault(app, new ArrayList<>());
+        if (appPipelines.stream()
+            .anyMatch(
+                existingPipeline ->
+                    existingPipeline.getName().equalsIgnoreCase(pipeline.getName())
+                        && !existingPipeline.getId().equals(pipeline.getId()))) {
+          String errorMessage =
+              String.format(
+                  "A pipeline with name %s already exists in the application %s",
+                  pipelineName, app);
+          log.error(errorMessage);
+          pipeline.put("errorMsg", errorMessage);
+          invalidPipelines.add(pipeline);
+          continue;
+        }
+
+        // Validate pipeline id
+        String id = pipeline.getId();
+        if (Strings.isNullOrEmpty(id)) {
+          pipeline.setId(UUID.randomUUID().toString());
+        } else if (!uniqueIdSet.add(id)) {
+          String errorMessage =
+              String.format(
+                  "Duplicate pipeline id %s found when processing pipeline %s in the application %s",
+                  id, pipeline.getName(), pipeline.getApplication());
+          log.error(errorMessage);
+          invalidPipelines.add(pipeline);
+          pipeline.put("errorMsg", errorMessage);
+          continue;
+        }
+        validPipelines.add(pipeline);
+      } catch (Exception e) {
+        String errorMessage =
+            String.format(
+                "Encountered the following error when validating pipeline %s in the application %s: %s",
+                pipeline.getName(), pipeline.getApplication(), e.getMessage());
+        log.error(errorMessage, e);
+        pipeline.put("errorMsg", errorMessage);
+        invalidPipelines.add(pipeline);
+      }
+    }
+    log.debug(
+        "Validated {} pipelines in {}ms",
+        pipelines.size(),
+        System.currentTimeMillis() - validationStartTime);
   }
 }
