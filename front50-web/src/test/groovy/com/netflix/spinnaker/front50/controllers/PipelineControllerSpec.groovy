@@ -2,6 +2,7 @@ package com.netflix.spinnaker.front50.controllers
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.netflix.spinnaker.fiat.shared.FiatPermissionEvaluator
+import com.netflix.spinnaker.front50.config.controllers.PipelineControllerConfig
 import com.netflix.spinnaker.front50.model.pipeline.PipelineDAO
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -22,7 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 @AutoConfigureMockMvc(addFilters = false)
 @WebMvcTest(controllers = [PipelineController])
-@ContextConfiguration(classes = [TestConfiguration, PipelineController])
+@ContextConfiguration(classes = [TestConfiguration, PipelineController, PipelineControllerConfig])
 class PipelineControllerSpec extends Specification {
 
   @Autowired

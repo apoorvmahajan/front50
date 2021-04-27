@@ -40,6 +40,7 @@ import com.netflix.spinnaker.kork.web.exceptions.ValidationException;
 import com.netflix.spinnaker.security.AuthenticatedRequest;
 import java.util.*;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
@@ -289,8 +290,7 @@ public class PipelineController {
    */
   private void validatePipeline(final Pipeline pipeline, Boolean staleCheck) {
     // Check if valid pipeline name and app name have been provided
-    if (Strings.isNullOrEmpty(pipeline.getApplication())
-        || Strings.isNullOrEmpty(pipeline.getName())) {
+    if (StringUtils.isAnyBlank(pipeline.getApplication(), pipeline.getName())) {
       throw new InvalidEntityException(
           "Invalid pipeline definition provided. A valid pipeline name and application name must be provided.");
     }
