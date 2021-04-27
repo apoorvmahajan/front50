@@ -60,6 +60,7 @@ dependencies {
 }
 
 test {
+  useJUnitPlatform()
   environment "AWS_ACCESS_KEY_ID", "null"
   environment "AWS_SECRET_KEY", "null"
 }
