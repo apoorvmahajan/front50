@@ -43,10 +43,17 @@ import org.springframework.web.util.UriComponentsBuilder;
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     classes = {WebEnvironmentTest.MockHelper.class, Main.class})
+// It would be lovely to have a per-method TestPropertySource annotation, or
+// some other simple way to parametrize tests to verify what happens when
+// front50.tomcat.rejectIllegalHeader isn't set at all, and set to true, in
+// addition to setting it to false.  At the moment this takes more code
+// duplication or complexity than I have the stamina for.  See
+// https://github.com/spring-projects/spring-framework/issues/18951.
 @TestPropertySource(
     properties = {
       "spring.application.name = front50",
       "logging.level.org.apache.coyote.http11.Http11InputBuffer = DEBUG",
+      "front50.tomcat.rejectIllegalHeader = false"
     })
 class WebEnvironmentTest {
 
@@ -74,7 +81,7 @@ class WebEnvironmentTest {
 
     ResponseEntity<String> entity =
         restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers), String.class);
-    assertEquals(HttpStatus.BAD_REQUEST, entity.getStatusCode());
+    assertEquals(HttpStatus.OK, entity.getStatusCode());
   }
 
   public static class MockHelper {
