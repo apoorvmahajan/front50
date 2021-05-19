@@ -45,6 +45,18 @@ dependencies {
 
   runtimeOnly "com.netflix.spinnaker.kork:kork-runtime"
 
+  // To fix https://nvd.nist.gov/vuln/detail/CVE-2021-21350
+  // Introduced by com.netflix.eureka:eureka-client via kork-eureka
+  //
+  // TODO: Move to kork
+  // when we build kork ourselves, update in spinnaker-dependencies/spinnaker-dependencies.gradle. And remove completely when
+  // https://github.com/Netflix/eureka releases a version that contains
+  // https://github.com/Netflix/eureka/commit/50db5d24a7c45375c0b32fffa238256276e6432e, and kork uses it.
+
+  constraints {
+     runtimeOnly("com.thoughtworks.xstream:xstream:1.4.16")
+  } // code-fix end
+
   testImplementation project(":front50-test")
   testImplementation project(":front50-s3")
   testImplementation project(":front50-sql")
