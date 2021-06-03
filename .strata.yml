@@ -1,0 +1,23 @@
+---
+# From https://confluence.internal.salesforce.com/display/public/ZEN/Pipeline+Stages+In+Depth#PipelineStagesInDepth-Global.strata.ymlKeys
+pipeline_template: utest-only/Jenkinsfile-1
+email_reply_to: sfcdupstream@salesforce.com
+docker_test_images:
+  - dva/sfcd/spinnaker-build:latest
+
+# Specify TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX since testcontainers uses
+# docker.io by default, which isn't accessible from jenkins.  See
+# https://www.testcontainers.org/features/image_name_substitution/#automatically-modifying-docker-hub-image-names.
+#
+# Disable front50-sql and front50-web tests until testcontainers dependencies
+# are present.  See https://git.soma.salesforce.com/3pp/3pp/pull/74 and
+# https://git.soma.salesforce.com/3pp/3pp/pull/77.
+#
+# proxy information comes from
+# https://git.soma.salesforce.com/sfcd/docker-spinnaker-build/blob/bd9266225fa66dc7d1838a5a8bcfc494ab969705/Dockerfile
+# and
+# https://git.soma.salesforce.com/sfcd/builds-shared/blob/0b2919641456edb62150aecace366ed05e6bf6bb/make/include/spinnaker.mk#L3
+#
+# other gradle options match the upstream PR builds here:
+# https://git.soma.salesforce.com/spinnaker/front50/blob/6417003054393807280f7b0aab16f0455ddec2cf/.github/workflows/pr.yml
+unit_tests_command: TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g -Dhttps.proxyHost=${HTTP_PROXY_HOST} -Dhttps.proxyPort=${HTTP_PROXY_PORT} -Dhttp.nonProxyHosts=\"${HTTP_PROXY_BYPASS}\"" ./gradlew build -x :front50-sql:test -x :front50-web:test
