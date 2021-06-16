@@ -72,12 +72,13 @@ abstract class PipelineControllerTck extends Specification {
   StorageServiceConfigurationProperties.PerObjectType pipelineDAOConfigProperties =
     new StorageServiceConfigurationProperties().getPipeline()
   FiatPermissionEvaluator fiatPermissionEvaluator
-
+  AuthorizationSupport authorizationSupport
 
   void setup() {
     this.pipelineDAO = Spy(createPipelineDAO())
     this.serviceAccountsService = Mock(ServiceAccountsService)
     this.fiatPermissionEvaluator = Mock(FiatPermissionEvaluator)
+    this.authorizationSupport = Spy(new AuthorizationSupport(fiatPermissionEvaluator))
 
     mockMvc = MockMvcBuilders
       .standaloneSetup(new PipelineController(pipelineDAO,
@@ -86,7 +87,8 @@ abstract class PipelineControllerTck extends Specification {
         Lists.emptyList(),
         Optional.empty(),
         config,
-        fiatPermissionEvaluator))
+        fiatPermissionEvaluator,
+        authorizationSupport))
       .setControllerAdvice(
         new GenericExceptionHandlers(
           new ExceptionMessageDecorator(Mock(ObjectProvider) as ObjectProvider<List<ExceptionMessage>>)
@@ -375,7 +377,10 @@ abstract class PipelineControllerTck extends Specification {
       [id: "id2", triggers: []],
       [name: "Failed Pipeline 3", application: "test_app_without_permission", id: "id3", triggers: []],
       [name: "Failed Pipeline 4", application: "test_app", id: "id4", triggers: []],
-      [name: "Failed Pipeline 5", application: "test_app", id: "id1", triggers: []]
+      [name: "Failed Pipeline 5", application: "test_app", id: "id1", triggers: []],
+      [name: "Failed Pipeline 6", application: "test_app", id: "id6", triggers: [:]],
+      [name: "Failed Pipeline 7", application: "test_app", id: "id7",
+       triggers: [[runAsUser: "not_accessible"]]]
     ]
 
     // Success case
@@ -393,39 +398,59 @@ abstract class PipelineControllerTck extends Specification {
     1 * fiatPermissionEvaluator.hasPermission(_, "test_app", "APPLICATION", "WRITE") >> true
     1 * fiatPermissionEvaluator.hasPermission(_, "test_app_without_permission", "APPLICATION", "WRITE") >> false
     1 * pipelineDAO.bulkImport(pipelines[0..0]) >> null
+    1 * authorizationSupport.hasRunAsUserPermission(pipelines[6]) >> false
     response.status == OK
     new JsonSlurper().parseText(response.getContentAsString()) == [
       successful_pipelines_count: 1,
       successful_pipelines: ["Successful Pipeline 1"],
-      failed_pipelines_count    : 4,
+      failed_pipelines_count    : 6,
       failed_pipelines          : [
         [
-          id         : "id2",
-          triggers: [],
-          errorMsg   : "Encountered the following error when validating pipeline null in the application null: " +
+          id          : "id6",
+          name        : "Failed Pipeline 6",
+          application : "test_app",
+          triggers    : [:],
+          errorMsg    : "Failed to deserialize the pipeline json into a valid pipeline: " +
+            "java.lang.IllegalArgumentException: Cannot deserialize instance of " +
+            "`java.util.ArrayList<com.netflix.spinnaker.front50.model.pipeline.Trigger" +
+            "<java.lang.String,java.lang.Object>>` " +
+            "out of START_OBJECT token\n at [Source: UNKNOWN; line: -1, column: -1]"
+        ],
+        [
+          id          : "id7",
+          name        : "Failed Pipeline 7",
+          application : "test_app",
+          triggers: [[runAsUser: "not_accessible"]],
+          errorMsg    : "Validation of runAsUser permissions for pipeline Failed Pipeline 7 " +
+            "in the application test_app failed."
+        ],
+        [
+          id          : "id2",
+          triggers    : [],
+          errorMsg    : "Encountered the following error when validating pipeline null in the application null: " +
             "Invalid pipeline definition provided. A valid pipeline name and application name must be provided."
         ],
         [
-          id         : "id3",
-          name       : "Failed Pipeline 3",
-          application: "test_app_without_permission",
-          triggers: [],
-          errorMsg   : "User anonymous does not have WRITE permission " +
+          id          : "id3",
+          name        : "Failed Pipeline 3",
+          application : "test_app_without_permission",
+          triggers    : [],
+          errorMsg    : "User anonymous does not have WRITE permission " +
             "to save the pipeline Failed Pipeline 3 in the application test_app_without_permission."
         ],
         [
-          id         : "id4",
-          name       : "Failed Pipeline 4",
-          application: "test_app",
-          triggers: [],
-          errorMsg   : "A pipeline with name Failed Pipeline 4 already exists in the application test_app"
+          id          : "id4",
+          name        : "Failed Pipeline 4",
+          application : "test_app",
+          triggers    : [],
+          errorMsg    : "A pipeline with name Failed Pipeline 4 already exists in the application test_app"
         ],
         [
-          id         : "id1",
-          name       : "Failed Pipeline 5",
-          application: "test_app",
-          triggers: [],
-          errorMsg   : "Duplicate pipeline id id1 found when processing pipeline Failed Pipeline 5 " +
+          id          : "id1",
+          name        : "Failed Pipeline 5",
+          application : "test_app",
+          triggers    : [],
+          errorMsg    : "Duplicate pipeline id id1 found when processing pipeline Failed Pipeline 5 " +
             "in the application test_app"
         ]
       ]
@@ -466,7 +491,8 @@ abstract class PipelineControllerTck extends Specification {
               Lists.emptyList(),
               Optional.empty(),
               config,
-              fiatPermissionEvaluator))
+              fiatPermissionEvaluator,
+              authorizationSupport))
             .setControllerAdvice(
               new GenericExceptionHandlers(
                 new ExceptionMessageDecorator(Mock(ObjectProvider) as ObjectProvider<List<ExceptionMessage>>)
@@ -523,7 +549,8 @@ abstract class PipelineControllerTck extends Specification {
               Lists.emptyList(),
               Optional.empty(),
               config,
-              fiatPermissionEvaluator))
+              fiatPermissionEvaluator,
+              authorizationSupport))
             .setControllerAdvice(
               new GenericExceptionHandlers(
                 new ExceptionMessageDecorator(Mock(ObjectProvider) as ObjectProvider<List<ExceptionMessage>>)
@@ -578,7 +605,8 @@ abstract class PipelineControllerTck extends Specification {
               Lists.emptyList(),
               Optional.empty(),
               config,
-              fiatPermissionEvaluator))
+              fiatPermissionEvaluator,
+              authorizationSupport))
             .setControllerAdvice(
               new GenericExceptionHandlers(
                 new ExceptionMessageDecorator(Mock(ObjectProvider) as ObjectProvider<List<ExceptionMessage>>)
@@ -647,7 +675,8 @@ abstract class PipelineControllerTck extends Specification {
               Lists.emptyList(),
               Optional.empty(),
               config,
-              fiatPermissionEvaluator))
+              fiatPermissionEvaluator,
+              authorizationSupport))
             .setControllerAdvice(
               new GenericExceptionHandlers(
                 new ExceptionMessageDecorator(Mock(ObjectProvider) as ObjectProvider<List<ExceptionMessage>>)

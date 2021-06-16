@@ -41,6 +41,7 @@ import com.netflix.spinnaker.security.AuthenticatedRequest;
 import java.util.*;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
@@ -69,6 +70,7 @@ public class PipelineController {
   private final Optional<PipelineTemplateDAO> pipelineTemplateDAO;
   private final PipelineControllerConfig pipelineControllerConfig;
   private final FiatPermissionEvaluator fiatPermissionEvaluator;
+  private final AuthorizationSupport authorizationSupport;
 
   public PipelineController(
       PipelineDAO pipelineDAO,
@@ -77,7 +79,8 @@ public class PipelineController {
       List<PipelineValidator> pipelineValidators,
       Optional<PipelineTemplateDAO> pipelineTemplateDAO,
       PipelineControllerConfig pipelineControllerConfig,
-      FiatPermissionEvaluator fiatPermissionEvaluator) {
+      FiatPermissionEvaluator fiatPermissionEvaluator,
+      AuthorizationSupport authorizationSupport) {
     this.pipelineDAO = pipelineDAO;
     this.objectMapper = objectMapper;
     this.serviceAccountsService = serviceAccountsService;
@@ -85,6 +88,7 @@ public class PipelineController {
     this.pipelineTemplateDAO = pipelineTemplateDAO;
     this.pipelineControllerConfig = pipelineControllerConfig;
     this.fiatPermissionEvaluator = fiatPermissionEvaluator;
+    this.authorizationSupport = authorizationSupport;
   }
 
   @PreAuthorize("#restricted ? @fiatPermissionEvaluator.storeWholePermission() : true")
@@ -183,29 +187,34 @@ public class PipelineController {
     return savedPipeline;
   }
 
-  @PreAuthorize(
-      "@fiatPermissionEvaluator.storeWholePermission() "
-          + "and @authorizationSupport.hasRunAsUserPermission(#pipelines)")
+  @PreAuthorize("@fiatPermissionEvaluator.storeWholePermission()")
   @RequestMapping(value = "batchUpdate", method = RequestMethod.POST)
   public Map<String, Object> batchUpdate(
-      @RequestBody List<Pipeline> pipelines,
+      @RequestBody List<Map<String, Object>> pipelinesJson,
       @RequestParam(value = "staleCheck", required = false, defaultValue = "false")
           Boolean staleCheck) {
 
     long batchUpdateStartTime = System.currentTimeMillis();
 
-    Map<String, Object> returnData = new HashMap<>();
+    log.debug(
+        "Deserializing the provided map of {} pipelines into a list of pipeline objects.",
+        pipelinesJson.size());
+    ImmutablePair<List<Pipeline>, List<Map<String, Object>>> deserializedPipelines =
+        deSerializePipelines(pipelinesJson);
+    List<Pipeline> pipelines = deserializedPipelines.getLeft();
+    List<Map<String, Object>> failedPipelines = deserializedPipelines.getRight();
 
     log.info(
-        "Received request to batch update the following pipelines: {}",
+        "Batch upserting the following pipelines: {}",
         pipelines.stream().map(Pipeline::getName).collect(Collectors.toList()));
 
-    log.debug("Following pipeline definitions will be processed: {}", pipelines);
-
     List<Pipeline> pipelinesToSave = new ArrayList<>();
-    List<Pipeline> invalidPipelines = new ArrayList<>();
+    Map<String, Object> returnData = new HashMap<>();
 
+    // List of pipelines in the provide request body which don't adhere to the schema
+    List<Pipeline> invalidPipelines = new ArrayList<>();
     validatePipelines(pipelines, staleCheck, pipelinesToSave, invalidPipelines);
+    failedPipelines.addAll(invalidPipelines);
 
     long bulkImportStartTime = System.currentTimeMillis();
     log.debug("Bulk importing the following pipelines: {}", pipelinesToSave);
@@ -219,13 +228,13 @@ public class PipelineController {
         pipelinesToSave.stream().map(Pipeline::getName).collect(Collectors.toList());
     returnData.put("successful_pipelines_count", savedPipelines.size());
     returnData.put("successful_pipelines", savedPipelines);
-    returnData.put("failed_pipelines_count", invalidPipelines.size());
-    returnData.put("failed_pipelines", invalidPipelines);
+    returnData.put("failed_pipelines_count", failedPipelines.size());
+    returnData.put("failed_pipelines", failedPipelines);
 
-    if (!invalidPipelines.isEmpty()) {
+    if (!failedPipelines.isEmpty()) {
       log.warn(
           "Following pipelines were skipped during the bulk import since they had errors: {}",
-          invalidPipelines.stream().map(Pipeline::getName).collect(Collectors.toList()));
+          failedPipelines.stream().map(p -> p.get("name")).collect(Collectors.toList()));
     }
     log.info(
         "Batch updated the following {} pipelines in {}ms: {}",
@@ -281,6 +290,48 @@ public class PipelineController {
     pipelineDAO.update(id, pipeline);
 
     return pipeline;
+  }
+
+  /**
+   * Helper method to deserialize the given list of Pipeline maps into a list of Pipeline objects
+   *
+   * @param pipelinesMap List of pipeline maps
+   * @return Deserialized list of pipeline objects
+   */
+  private ImmutablePair<List<Pipeline>, List<Map<String, Object>>> deSerializePipelines(
+      List<Map<String, Object>> pipelinesMap) {
+
+    List<Pipeline> pipelines = new ArrayList<>();
+    List<Map<String, Object>> failedPipelines = new ArrayList<>();
+
+    log.trace("Deserializing the following pipeline maps into pipeline objects: {}", pipelinesMap);
+    pipelinesMap.forEach(
+        pipelineMap -> {
+          try {
+            Pipeline pipeline = objectMapper.convertValue(pipelineMap, Pipeline.class);
+            if (!authorizationSupport.hasRunAsUserPermission(pipeline)) {
+              String errorMessage =
+                  String.format(
+                      "Validation of runAsUser permissions for pipeline %s in the application %s failed.",
+                      pipeline.getName(), pipeline.getApplication());
+              log.error(errorMessage);
+              pipeline.put("errorMsg", errorMessage);
+              failedPipelines.add(pipeline);
+            } else {
+              pipelines.add(pipeline);
+            }
+          } catch (IllegalArgumentException e) {
+            log.error(
+                "Failed to deserialize pipeline map from the provided json: {}", pipelineMap, e);
+            pipelineMap.put(
+                "errorMsg",
+                String.format(
+                    "Failed to deserialize the pipeline json into a valid pipeline: %s", e));
+            failedPipelines.add(pipelineMap);
+          }
+        });
+
+    return ImmutablePair.of(pipelines, failedPipelines);
   }
 
   /**
@@ -464,7 +515,7 @@ public class PipelineController {
         String app = pipeline.getApplication();
         String pipelineName = pipeline.getName();
 
-        // Check if user has permission to write the pipeline
+        // Check if user has permissions to write the pipeline
         if (!appPermissionForUser.computeIfAbsent(
             app,
             key ->
