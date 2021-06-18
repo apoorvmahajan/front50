@@ -53,8 +53,13 @@ dependencies {
   // https://github.com/Netflix/eureka releases a version that contains
   // https://github.com/Netflix/eureka/commit/50db5d24a7c45375c0b32fffa238256276e6432e, and kork uses it.
 
+  // To fix https://nvd.nist.gov/vuln/detail/CVE-2019-17495
+  // Introduced by io.springfox:springfox-swagger-ui via kork-bom and kork-swagger
+  // TODO: Move to kork, update version
   constraints {
      runtimeOnly("com.thoughtworks.xstream:xstream:1.4.16")
+
+     runtimeOnly("io.springfox:springfox-swagger-ui:2.10.0")
   } // code-fix end
 
   testImplementation project(":front50-test")
