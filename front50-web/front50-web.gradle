@@ -36,14 +36,14 @@ dependencies {
   implementation "org.springframework.boot:spring-boot-starter-actuator"
   implementation "com.netflix.spinnaker.fiat:fiat-api:$fiatVersion"
   implementation "com.netflix.spinnaker.fiat:fiat-core:$fiatVersion"
-  implementation "com.netflix.spinnaker.kork:kork-artifacts"
-  implementation "com.netflix.spinnaker.kork:kork-web"
-  implementation "com.netflix.spinnaker.kork:kork-exceptions"
+  implementation "com.salesforce.spinnaker.kork:kork-artifacts"
+  implementation "com.salesforce.spinnaker.kork:kork-web"
+  implementation "com.salesforce.spinnaker.kork:kork-exceptions"
   implementation "com.squareup.retrofit:converter-jackson"
   implementation "io.swagger:swagger-annotations"
   implementation "commons-codec:commons-codec"
 
-  runtimeOnly "com.netflix.spinnaker.kork:kork-runtime"
+  runtimeOnly "com.salesforce.spinnaker.kork:kork-runtime"
 
   // To fix https://nvd.nist.gov/vuln/detail/CVE-2021-21350
   // Introduced by com.netflix.eureka:eureka-client via kork-eureka
@@ -74,7 +74,7 @@ dependencies {
   testImplementation project(":front50-sql")
   testImplementation "io.reactivex:rxjava"
   testImplementation "com.amazonaws:aws-java-sdk-s3"
-  testImplementation "com.netflix.spinnaker.kork:kork-sql-test"
+  testImplementation "com.salesforce.spinnaker.kork:kork-sql-test"
   testImplementation "org.testcontainers:mysql:1.15.1"
 
   // Add each included cloud provider project as a runtime dependency
