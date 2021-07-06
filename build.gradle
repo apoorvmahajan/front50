@@ -68,6 +68,13 @@ subprojects { project ->
       testImplementation("org.hamcrest:hamcrest-core")
       testRuntimeOnly("cglib:cglib-nodep")
       testRuntimeOnly("org.objenesis:objenesis")
+
+      // To fix https://nvd.nist.gov/vuln/detail/CVE-2021-27568
+      // Introduced by net.minidev:json-smart used by com.jayway.jsonpath:json-path under different packages of spring framework and springboot
+      // TODO: Move to kork by upgrading the version of jayway jsonpath and json-smart, or bumping up the spring framework version
+      constraints {
+         implementation("com.jayway.jsonpath:json-path:2.6.0")
+      }
     }
   }
 }
