@@ -4,7 +4,8 @@ pipeline_template: utest-only/Jenkinsfile-1
 email_reply_to: sfcdupstream@salesforce.com
 docker_test_images:
   - dva/sfcd/spinnaker-build:latest
-
+# Convince strata to stop using snyk's default (and specific to maven) args
+snyk_build_args: "''"
 # Specify TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX since testcontainers uses
 # docker.io by default, which isn't accessible from jenkins.  See
 # https://www.testcontainers.org/features/image_name_substitution/#automatically-modifying-docker-hub-image-names.
