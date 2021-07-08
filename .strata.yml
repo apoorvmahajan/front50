@@ -20,4 +20,4 @@ docker_test_images:
 #
 # other gradle options match the upstream PR builds here:
 # https://git.soma.salesforce.com/spinnaker/front50/blob/6417003054393807280f7b0aab16f0455ddec2cf/.github/workflows/pr.yml
-unit_tests_command: TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g -Dhttps.proxyHost=${HTTP_PROXY_HOST} -Dhttps.proxyPort=${HTTP_PROXY_PORT} -Dhttp.nonProxyHosts=\"${HTTP_PROXY_BYPASS}\"" ./gradlew build -x :front50-sql:test -x :front50-web:test
+unit_tests_command: gradleenv auto && TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g" ./gradlew build -x :front50-sql:test -x :front50-web:test
