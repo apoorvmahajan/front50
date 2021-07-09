@@ -32,20 +32,6 @@ subprojects { project ->
 
   // For internal-to-salesforce artifacts (e.g. kork)
   repositories {
-    // Without removing jcenter/bintray, gradle fails because jcenter is no more
-    // (https://status.bintray.com/) and returns a 403, and somehow gradle gives up
-    // instead of querying other repos, etc.
-    //
-    // Ideally, we'd fix this by removing the code that adds jcenter in the first place
-    // (https://github.com/spinnaker/spinnaker-gradle-project/blob/e06b62c0958e06e4e2e300ac7268f67e65bb0959/spinnaker-project-plugin/src/main/groovy/com/ne
-    // but because jcenter is gone, that project currently (8-jul-21) doesn't build, so
-    // it's difficult to make changes.
-    all { ArtifactRepository repo ->
-      if (repo.name.toLowerCase().contains('jcenter')
-          || repo.name.toLowerCase().contains('bintray')) {
-        remove repo
-      }
-    }
     maven {
       url 'https://nexus-proxy-prd.soma.salesforce.com/nexus/content/groups/public/'
       credentials {
