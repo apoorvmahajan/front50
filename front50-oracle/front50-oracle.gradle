@@ -12,8 +12,12 @@ dependencies {
   // To fix https://nvd.nist.gov/vuln/detail/CVE-2021-27568
   // Introduced by net.minidev:json-smart used by com.nimbusds:oauth2-oidc-sdk
   // TODO: Move to kork by upgrading the version of jayway jsonpath and json-smart, or bumping up the spring framework version
+
+  // To fix https://git.soma.salesforce.com/pages/Infrastructure-Security/ast.github.io/sonatype-2018-0705.html (sonatype-2018-0705)
+  // Introduced by commons-io:commons-io via com.oracle.oci.sdk
   constraints {
      implementation("net.minidev:json-smart:2.4.7")
+     implementation("commons-io:commons-io:2.7")
   }
   testImplementation project(":front50-test")
 }

@@ -60,6 +60,10 @@ dependencies {
   // To fix https://github.com/cbeust/testng/issues/2150 (sonatype-2019-0115)
   // Introduced by org.testng used by org.codehaus.groovy:groovy-testng via kork-web
   // TODO: Move to kork by upgrading the version of groovy and spockframework
+
+  // To fix https://git.soma.salesforce.com/pages/Infrastructure-Security/ast.github.io/sonatype-2018-0705.html (sonatype-2018-0705)
+  // Introduced by commons-io:commons-io via kork-bom
+  // TODO: Move to kork by upgrading the version
   constraints {
      runtimeOnly("com.thoughtworks.xstream:xstream:1.4.16")
 
@@ -67,6 +71,8 @@ dependencies {
 
      implementation("org.codehaus.groovy:groovy-all:3.0.8")
      implementation("org.spockframework:spock-core:2.0-groovy-3.0")
+
+     implementation("commons-io:commons-io:2.7")
   } // code-fix end
 
   testImplementation project(":front50-test")
