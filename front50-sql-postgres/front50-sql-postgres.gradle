@@ -1,6 +1,4 @@
 dependencies {
-  // To fix https://nvd.nist.gov/vuln/detail/CVE-2020-13692
-  // Introduced by iorg.postgresql:postgresql via front50-sql and front50-sql-postgres
-  runtimeOnly "org.postgresql:postgresql:42.2.13"
+  runtimeOnly "org.postgresql:postgresql"
 
 }

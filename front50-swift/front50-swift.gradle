@@ -28,11 +28,5 @@ dependencies {
   implementation "org.springframework:spring-web"
   implementation 'org.pacesys:openstack4j:3.2.0'
 
-  // To fix https://git.soma.salesforce.com/pages/Infrastructure-Security/ast.github.io/sonatype-2018-0705.html (sonatype-2018-0705)
-  // Introduced by commons-io:commons-io via org.pacesys
-  constraints {
-      implementation("commons-io:commons-io:2.7")
-  }
-
   testImplementation project(":front50-test")
 }
