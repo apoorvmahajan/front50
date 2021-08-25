@@ -1,0 +1,21 @@
+FROM dva-registry.internal.salesforce.com/sfci/sfcd/docker-spinnaker-base/sfcd/spinnaker-base:16
+
+LABEL SCM_URL="https://git.soma.salesforce.com/spinnaker/front50"
+
+ENV USER spinnaker
+ENV PORT 8080
+ENV CONFIG_PATH /usr/lib/spinnaker-front50/config/front50-local.yml
+ENV REDIS_ENABLED true
+
+ADD front50-web/build/distributions/front50.tar /usr/lib
+RUN mv /usr/lib/front50 /usr/lib/spinnaker-front50 && \
+    chown -R ${USER}:${USER} /usr/lib/spinnaker-front50
+RUN ln -s /usr/lib/spinnaker-front50/bin/front50 /usr/bin/spinnaker-front50
+
+COPY Dockerfile.sfcd /etc/Dockerfile
+COPY entrypoint.sh /sbin/entrypoint
+
+HEALTHCHECK CMD curl http://localhost:${PORT}/health | grep UP || exit 1
+USER ${USER}
+EXPOSE ${PORT}/tcp
+ENTRYPOINT ["/sbin/entrypoint"]

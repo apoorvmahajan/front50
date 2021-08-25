@@ -1,9 +1,9 @@
 ---
 # From https://confluence.internal.salesforce.com/display/public/ZEN/Pipeline+Stages+In+Depth#PipelineStagesInDepth-Global.strata.ymlKeys
-pipeline_template: utest-only/Jenkinsfile-1
+pipeline_template: docker/Jenkinsfile-1
 email_reply_to: sfcdupstream@salesforce.com
 docker_test_images:
-  - dva/sfcd/spinnaker-build:latest
+  - sfci/sfcd/docker-spinnaker-build/sfcd/spinnaker-build:latest
 # Convince strata to stop using snyk's default (and specific to maven) args
 snyk_build_args: "''"
 # Specify TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX since testcontainers uses
@@ -21,4 +21,9 @@ snyk_build_args: "''"
 #
 # other gradle options match the upstream PR builds here:
 # https://git.soma.salesforce.com/spinnaker/front50/blob/6417003054393807280f7b0aab16f0455ddec2cf/.github/workflows/pr.yml
-unit_tests_command: gradleenv auto && TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g" ./gradlew build -x :front50-sql:test -x :front50-web:test
+unit_tests_command: gradleenv auto && TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g" ./gradlew build -x :front50-sql:test -x :front50-web:test front-web:distTar
+docker_images:
+    front50_release-1.23.x-sfcd: ./Dockerfile.sfcd
+production_branch:
+    - release-1.23.x-sfcd
+promote_to_falcon: true
