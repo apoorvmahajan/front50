@@ -20,14 +20,7 @@ dependencies {
   implementation project(":front50-core")
 
   implementation "com.fasterxml.jackson.core:jackson-databind"
-
-  // To fix https://nvd.nist.gov/vuln/detail/CVE-2020-7692
-  // Introduced by com.google.apis:google-api-services-storage
-  // TODO: Move to kork
-  // Version to be removed as google-cloud-storage lib will be introduced in kork and get updated.
-  implementation "com.google.apis:google-api-services-storage:v1-rev20200611-1.30.10"
-  // code-fix end
-
+  implementation "com.google.apis:google-api-services-storage"
   implementation "com.google.auth:google-auth-library-oauth2-http"
   // TODO(plumpy): remove version once added to kork
   implementation "com.google.cloud:google-cloud-storage:1.108.0"
