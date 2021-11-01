@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 @AutoConfigureMockMvc(addFilters = false)
 @WebMvcTest(controllers = [PipelineController])
-@ContextConfiguration(classes = [TestConfiguration, PipelineController, PipelineControllerConfig])
+@ContextConfiguration(classes = [TestConfiguration, AuthorizationSupport, PipelineController, PipelineControllerConfig])
 class PipelineControllerSpec extends Specification {
 
   @Autowired
