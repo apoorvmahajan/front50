@@ -10,9 +10,9 @@ snyk_build_args: "''"
 # docker.io by default, which isn't accessible from jenkins.  See
 # https://www.testcontainers.org/features/image_name_substitution/#automatically-modifying-docker-hub-image-names.
 #
-# Disable front50-sql and front50-web tests until testcontainers dependencies
-# are present.  See https://git.soma.salesforce.com/3pp/3pp/pull/74 and
-# https://git.soma.salesforce.com/3pp/3pp/pull/77.
+# Disable front50-sql tests since they use a postgres docker image, and
+# SalesforceImageNameSubstitutor doesn't know of an internal-to-Salesforce
+# postgres image.
 #
 # proxy information comes from
 # https://git.soma.salesforce.com/sfcd/docker-spinnaker-build/blob/bd9266225fa66dc7d1838a5a8bcfc494ab969705/Dockerfile
@@ -21,7 +21,7 @@ snyk_build_args: "''"
 #
 # other gradle options match the upstream PR builds here:
 # https://git.soma.salesforce.com/spinnaker/front50/blob/6417003054393807280f7b0aab16f0455ddec2cf/.github/workflows/pr.yml
-unit_tests_command: gradleenv auto && TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g" ./gradlew build -x :front50-sql:test -x :front50-web:test front-web:distTar && spinnaker_git_tag.sh
+unit_tests_command: gradleenv auto && TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g" ./gradlew build -x :front50-sql:test front-web:distTar && spinnaker_git_tag.sh
 docker_images:
     front50_release-1.23.x-sfcd: ./Dockerfile.sfcd
 production_branch:

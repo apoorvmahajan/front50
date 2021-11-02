@@ -16,14 +16,15 @@ dependencies {
 
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core"
 
+  testImplementation "com.salesforce.spinnaker.kork:kork-sql-test" // for SalesforceImageNameSubstitutor
   testImplementation "io.mockk:mockk"
   testImplementation "dev.minutest:minutest"
   testImplementation "org.junit.jupiter:junit-jupiter-api"
 
   testImplementation "mysql:mysql-connector-java"
-  testImplementation "org.testcontainers:mysql:1.15.1"
+  testImplementation "org.testcontainers:mysql"
 
-  testImplementation "org.testcontainers:postgresql:1.15.1"
+  testImplementation "org.testcontainers:postgresql"
   testImplementation "org.postgresql:postgresql"
 
   // Only used for Initializing Datasource. For actual CRUD, test containers preferred.
