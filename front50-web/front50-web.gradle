@@ -34,8 +34,8 @@ dependencies {
   implementation project(":front50-migrations")
   implementation "org.springframework.boot:spring-boot-starter-web"
   implementation "org.springframework.boot:spring-boot-starter-actuator"
-  implementation "com.netflix.spinnaker.fiat:fiat-api:$fiatVersion"
-  implementation "com.netflix.spinnaker.fiat:fiat-core:$fiatVersion"
+  implementation "com.salesforce.spinnaker.fiat:fiat-api:$fiatVersion"
+  implementation "com.salesforce.spinnaker.fiat:fiat-core:$fiatVersion"
   implementation "com.salesforce.spinnaker.kork:kork-artifacts"
   implementation "com.salesforce.spinnaker.kork:kork-web"
   implementation "com.salesforce.spinnaker.kork:kork-exceptions"
