@@ -1,4 +1,4 @@
-FROM dva-registry.internal.salesforce.com/sfci/sfcd/docker-spinnaker-base/sfcd/spinnaker-base:19
+FROM dva-registry.internal.salesforce.com/sfci/sfcd/docker-spinnaker-base/sfcd/spinnaker-base:21
 
 LABEL SCM_URL="https://git.soma.salesforce.com/spinnaker/front50"
 
