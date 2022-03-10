@@ -14,12 +14,7 @@ snyk_build_args: "''"
 # SalesforceImageNameSubstitutor doesn't know of an internal-to-Salesforce
 # postgres image.
 #
-# proxy information comes from
-# https://git.soma.salesforce.com/sfcd/docker-spinnaker-build/blob/bd9266225fa66dc7d1838a5a8bcfc494ab969705/Dockerfile
-# and
-# https://git.soma.salesforce.com/sfcd/builds-shared/blob/0b2919641456edb62150aecace366ed05e6bf6bb/make/include/spinnaker.mk#L3
-#
-# other gradle options match the upstream PR builds here:
+# gradle options match the upstream PR builds here:
 # https://git.soma.salesforce.com/spinnaker/front50/blob/6417003054393807280f7b0aab16f0455ddec2cf/.github/workflows/pr.yml
 unit_tests_command: gradleenv auto && TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g" ./gradlew build -x :front50-sql:test front-web:distTar && spinnaker_git_tag.sh
 docker_images:
