@@ -13,9 +13,8 @@ RUN mv /usr/lib/front50 /usr/lib/spinnaker-front50 && \
 RUN ln -s /usr/lib/spinnaker-front50/bin/front50 /usr/bin/spinnaker-front50
 
 COPY Dockerfile.sfcd /etc/Dockerfile
-COPY entrypoint.sh /sbin/entrypoint
 
 HEALTHCHECK CMD curl http://localhost:${PORT}/health | grep UP || exit 1
 USER ${USER}
 EXPOSE ${PORT}/tcp
-ENTRYPOINT ["/sbin/entrypoint"]
+ENTRYPOINT ["/usr/bin/spinnaker-front50"]
