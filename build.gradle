@@ -60,7 +60,7 @@ subprojects { project ->
     }
 
     dependencies {
-      implementation(platform("com.salesforce.spinnaker.kork:kork-bom:$korkVersion"))
+      implementation(enforcedPlatform("com.salesforce.spinnaker.kork:kork-bom:$korkVersion"))
       annotationProcessor(platform("com.salesforce.spinnaker.kork:kork-bom:$korkVersion"))
       annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
       testAnnotationProcessor(platform("com.salesforce.spinnaker.kork:kork-bom:$korkVersion"))
