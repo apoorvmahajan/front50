@@ -16,7 +16,12 @@ snyk_build_args: "''"
 #
 # gradle options match the upstream PR builds here:
 # https://git.soma.salesforce.com/spinnaker/front50/blob/6417003054393807280f7b0aab16f0455ddec2cf/.github/workflows/pr.yml
-unit_tests_command: gradleenv auto && TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g" ./gradlew build -x :front50-sql:test front-web:distTar && spinnaker_git_tag.sh
+#
+# There's an opa policy that forbids access to /var/run/docker.sock.  Instead,
+# use /var/run/docker-secondary.sock.  See
+# https://salesforce-internal.slack.com/archives/CG2A365BK/p1659729614882769?thread_ts=1659726358.299829&cid=CG2A365BK
+# for background.
+unit_tests_command: gradleenv auto && TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="/var/run/docker-secondary.sock" TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX="dva-registry.internal.salesforce.com/sfci/3pp/3pp/docker.io/" GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx2g -Xms2g" ./gradlew build -x :front50-sql:test front-web:distTar && spinnaker_git_tag.sh
 docker_images:
     front50_release-1.23.x-sfcd: ./Dockerfile.sfcd
 production_branch:
