@@ -1,3 +1,4 @@
+FROM dva-registry.internal.salesforce.com/sfci/spinnaker/armory-observability-plugin:1 as armory-observability-plugin
 FROM dva-registry.internal.salesforce.com/sfci/sfcd/docker-spinnaker-base/sfcd/spinnaker-base:34
 
 LABEL SCM_URL="https://git.soma.salesforce.com/spinnaker/front50"
@@ -11,6 +12,9 @@ ADD front50-web/build/distributions/front50.tar /usr/lib
 RUN mv /usr/lib/front50 /usr/lib/spinnaker-front50 && \
     chown -R ${USER}:${USER} /usr/lib/spinnaker-front50
 RUN ln -s /usr/lib/spinnaker-front50/bin/front50 /usr/bin/spinnaker-front50
+
+# armory observability plugin (aop)
+COPY --from=armory-observability-plugin --chown=${USER}:${USER} /*.zip /opt/plugins/
 
 COPY Dockerfile.sfcd /etc/Dockerfile
 
